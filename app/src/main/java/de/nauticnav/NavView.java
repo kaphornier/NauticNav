@@ -9,28 +9,180 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class NavView extends View {
- private final Paint p=new Paint(3); private boolean night=false, showPos=true; private int sats=0; private float brightness=0.65f;
- private double distanceNm=0, sog=0, cog=0; private long startMs=0; private Location last; private final ArrayDeque<Point> history=new ArrayDeque<>();
- private static class Point{double sog,cog,seg; Point(double c,double d,double e){sog=c;cog=d;seg=e;}}
- private final SimpleDateFormat timeFmt=new SimpleDateFormat("HH:mm:ss",Locale.GERMANY);
- public NavView(Context c){super(c); p.setTypeface(Typeface.create("sans",Typeface.NORMAL)); setFocusable(true);}
- public void setSatellites(int n){sats=n;invalidate();}
- public void updateLocation(Location l){ if(startMs==0) startMs=System.currentTimeMillis(); double seg=0; if(last!=null) seg=last.distanceTo(l)/1852.0; distanceNm+=seg; sog=Math.max(0,l.hasSpeed()?l.getSpeed()*1.943844:0); cog=l.hasBearing()?l.getBearing():cog; history.addLast(new Point(sog,cog,seg)); while(totalHistory()>0.5 && history.size()>1) history.removeFirst(); last=new Location(l); invalidate(); }
- private double totalHistory(){double s=0; for(Point x:history)s+=x.seg; return s;}
- private double avgSog(){if(history.isEmpty())return 0; double v=0; for(Point x:history)v+=x.sog; return v/history.size();}
- private double avgCog(){if(history.isEmpty())return 0; double x=0,y=0; for(Point a:history){double r=Math.toRadians(a.cog);x+=Math.sin(r);y+=Math.cos(r);} double d=Math.toDegrees(Math.atan2(x,y)); return (d+360)%360;}
- private String pos(){return last==null?"—":String.format(Locale.US,"%.5f°, %.5f°",last.getLatitude(),last.getLongitude());}
- private String trip(){long sec=startMs==0?0:(System.currentTimeMillis()-startMs)/1000; return String.format(Locale.US,"%02d:%02d:%02d",sec/3600,(sec/60)%60,sec%60);}
- private void text(Canvas c,String s,float x,float y,float size,int align){p.setTextSize(size);p.setTextAlign(align==0?Paint.Align.LEFT:align==1?Paint.Align.CENTER:Paint.Align.RIGHT);p.setTypeface(Typeface.create("sans",Typeface.NORMAL));c.drawText(s,x,y,p);}
- private void box(Canvas c,float l,float t,float r,float b){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.5f);c.drawRoundRect(l,t,r,b,18,18,p);p.setStyle(Paint.Style.FILL);}
- @Override protected void onDraw(Canvas c){super.onDraw(c); float w=getWidth(),h=getHeight(); int bg=night?Color.rgb(5,9,14):Color.WHITE, fg=night?Color.rgb(242,231,215):Color.rgb(20,35,48), blue=night?Color.rgb(225,142,72):Color.rgb(24,125,225); c.drawColor(bg);p.setColor(fg);
-   text(c,"DISTANZ",w/2,54,15,1); p.setTypeface(Typeface.DEFAULT_BOLD);p.setTextSize(58);p.setTextAlign(Paint.Align.CENTER);c.drawText(String.format(Locale.US,"%.2f sm",distanceNm),w/2,112,p);
-   float top=140, gap=10, bw=(w-36-gap)/2; p.setColor(fg); box(c,18,top,18+bw,top+92); box(c,28+bw,top,28+2*bw,top+92); p.setColor(blue); text(c,"SOG AKTUELL",18+bw/2,top+29,13,1);text(c,String.format(Locale.US,"%.1f kn",sog),18+bw/2,top+66,28,1);p.setColor(fg);text(c,"Ø LETZTE 0,5 sm",18+bw/2,top+84,10,1); p.setColor(blue); text(c,"SOG Ø",28+bw+bw/2,top+29,13,1);text(c,String.format(Locale.US,"%.1f kn",avgSog()),28+bw+bw/2,top+66,28,1);p.setColor(fg);text(c,"letzte 0,5 sm",28+bw+bw/2,top+84,10,1);
-   top+=104;p.setColor(fg);box(c,18,top,18+bw,top+92);box(c,28+bw,top,28+2*bw,top+92);p.setColor(blue);text(c,"COG AKTUELL",18+bw/2,top+29,13,1);text(c,String.format(Locale.US,"%03.0f°",cog),18+bw/2,top+66,28,1);p.setColor(fg);text(c,"COG Ø",28+bw+bw/2,top+29,13,1);text(c,String.format(Locale.US,"%03.0f°",avgCog()),28+bw+bw/2,top+66,28,1);
-   top+=112;p.setColor(fg);text(c,timeFmt.format(new Date()),w/2,top,26,1);text(c,"FAHRTZEIT  "+trip(),w/2,top+31,16,1); if(showPos)text(c,pos(),w/2,top+58,13,1);
-   top+=78;p.setColor(night?Color.rgb(220,150,90):Color.rgb(50,90,115));box(c,18,top,w-18,top+48);text(c,"GPS  "+sats+" SAT",w/2-100,top+30,13,1);text(c,last==null?"Genauigkeit —":String.format(Locale.US,"±%.0f m",last.getAccuracy()),w/2,top+30,13,1);text(c,last!=null&&last.hasAccuracy()?"3D FIX":"NO FIX",w/2+100,top+30,13,1);
-   top+=68;p.setColor(fg);box(c,18,top,w/2-8,top+48);box(c,w/2+8,top,w-18,top+48);text(c,night?"TAG":"NACHT",w/4,top+30,14,1);text(c,"HELLIGKEIT  "+Math.round(brightness*100)+"%",w*0.75f,top+30,14,1);
-   float rb=h-82;p.setColor(night?Color.rgb(180,105,52):Color.rgb(25,115,205));c.drawRoundRect(24,rb,w-24,h-24,24,24,p);p.setColor(Color.WHITE);p.setTypeface(Typeface.DEFAULT_BOLD);text(c,"RESET  •  DISTANZ & FAHRTZEIT",w/2,rb+37,18,1);
- }
- @Override public boolean onTouchEvent(MotionEvent e){if(e.getAction()!=MotionEvent.ACTION_UP)return true;float x=e.getX(),y=e.getY(),h=getHeight(),w=getWidth(); if(y>h-100){distanceNm=0;startMs=System.currentTimeMillis();history.clear();last=null;sog=0;cog=0;invalidate();return true;} if(y>h-170&&y<h-95){if(x<w/2){night=!night;invalidate();}else{brightness-=0.15f;if(brightness<0.25f)brightness=1f;if(getContext() instanceof MainActivity)((MainActivity)getContext()).setBrightness(brightness);invalidate();}return true;} return true; }
+    private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private boolean night = false, showPos = true;
+    private int sats = 0;
+    private float brightness = 0.65f;
+    private double distanceNm = 0, sog = 0, cog = 0;
+    private long startMs = 0;
+    private Location last;
+    private final ArrayDeque<Point> history = new ArrayDeque<>();
+
+    private static class Point {
+        double sog, cog, seg;
+        Point(double sog, double cog, double seg) { this.sog = sog; this.cog = cog; this.seg = seg; }
+    }
+
+    private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.GERMANY);
+
+    public NavView(Context c) {
+        super(c);
+        p.setTypeface(Typeface.create("sans", Typeface.NORMAL));
+        setFocusable(true);
+    }
+
+    public void setSatellites(int n) { sats = n; invalidate(); }
+
+    public void updateLocation(Location l) {
+        if (startMs == 0) startMs = System.currentTimeMillis();
+        double seg = last == null ? 0 : last.distanceTo(l) / 1852.0;
+        distanceNm += seg;
+        sog = Math.max(0, l.hasSpeed() ? l.getSpeed() * 1.943844 : 0);
+        if (l.hasBearing()) cog = l.getBearing();
+        history.addLast(new Point(sog, cog, seg));
+        while (totalHistory() > 0.5 && history.size() > 1) history.removeFirst();
+        last = new Location(l);
+        invalidate();
+    }
+
+    private double totalHistory() { double s = 0; for (Point x : history) s += x.seg; return s; }
+    private double avgSog() { if (history.isEmpty()) return 0; double v = 0; for (Point x : history) v += x.sog; return v / history.size(); }
+    private double avgCog() {
+        if (history.isEmpty()) return 0;
+        double x = 0, y = 0;
+        for (Point a : history) { double r = Math.toRadians(a.cog); x += Math.sin(r); y += Math.cos(r); }
+        return (Math.toDegrees(Math.atan2(x, y)) + 360) % 360;
+    }
+    private String pos() { return last == null ? "—" : String.format(Locale.US, "%.5f°, %.5f°", last.getLatitude(), last.getLongitude()); }
+    private String trip() {
+        long sec = startMs == 0 ? 0 : (System.currentTimeMillis() - startMs) / 1000;
+        return String.format(Locale.US, "%02d:%02d:%02d", sec / 3600, (sec / 60) % 60, sec % 60);
+    }
+
+    private float d(float v) { return v * getResources().getDisplayMetrics().density; }
+    private void fill(Canvas c, int color) { p.setStyle(Paint.Style.FILL); p.setColor(color); }
+    private void stroke(Canvas c, int color, float widthDp) { p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(d(widthDp)); p.setColor(color); }
+    private void rounded(Canvas c, float l, float t, float r, float b, float radiusDp) { c.drawRoundRect(d(l), d(t), d(r), d(b), d(radiusDp), d(radiusDp), p); }
+    private void text(Canvas c, String s, float x, float y, float sizeSp, int align, boolean bold) {
+        p.setStyle(Paint.Style.FILL);
+        p.setTextSize(sizeSp * getResources().getDisplayMetrics().scaledDensity);
+        p.setTextAlign(align == 0 ? Paint.Align.LEFT : align == 1 ? Paint.Align.CENTER : Paint.Align.RIGHT);
+        p.setTypeface(Typeface.create("sans", bold ? Typeface.BOLD : Typeface.NORMAL));
+        c.drawText(s, d(x), d(y), p);
+    }
+
+    private void card(Canvas c, float l, float t, float r, float b, int fillColor, int lineColor) {
+        fill(c, fillColor); rounded(c, l, t, r, b, 16);
+        stroke(c, lineColor, 1); rounded(c, l, t, r, b, 16);
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float den = getResources().getDisplayMetrics().density;
+        float w = getWidth() / den, h = getHeight() / den;
+
+        int bg = night ? Color.rgb(7, 12, 18) : Color.rgb(246, 249, 251);
+        int surface = night ? Color.rgb(13, 20, 28) : Color.WHITE;
+        int fg = night ? Color.rgb(242, 231, 215) : Color.rgb(24, 39, 52);
+        int muted = night ? Color.rgb(157, 143, 128) : Color.rgb(103, 122, 136);
+        int accent = night ? Color.rgb(222, 137, 67) : Color.rgb(25, 126, 218);
+        int line = night ? Color.rgb(66, 57, 49) : Color.rgb(202, 214, 221);
+
+        fill(c, bg); c.drawRect(0, 0, getWidth(), getHeight(), p);
+
+        float side = 14, gap = 10;
+        float contentW = w - side * 2;
+        float bw = (contentW - gap) / 2;
+        float center = w / 2;
+
+        // Header
+        text(c, "NAUTICNAV", center, 25, 11, 1, true);
+        fill(c, accent);
+        c.drawRoundRect(d(center - 18), d(31), d(center + 18), d(34), d(2), d(2), p);
+        fill(c, fg);
+        text(c, "DISTANZ", center, 54, 12, 1, false);
+        text(c, String.format(Locale.US, "%.2f sm", distanceNm), center, 91, 42, 1, true);
+
+        float top = 106;
+        float cardH = 76;
+        // SOG cards
+        card(c, side, top, side + bw, top + cardH, surface, line);
+        card(c, side + bw + gap, top, w - side, top + cardH, surface, line);
+        fill(c, accent);
+        text(c, "SOG AKTUELL", side + bw/2, top + 24, 11, 1, true);
+        text(c, String.format(Locale.US, "%.1f kn", sog), side + bw/2, top + 54, 24, 1, true);
+        fill(c, muted); text(c, "aktuell", side + bw/2, top + 68, 9, 1, false);
+        fill(c, accent);
+        text(c, "SOG Ø", side + bw + gap + bw/2, top + 24, 11, 1, true);
+        text(c, String.format(Locale.US, "%.1f kn", avgSog()), side + bw + gap + bw/2, top + 54, 24, 1, true);
+        fill(c, muted); text(c, "letzte 0,5 sm", side + bw + gap + bw/2, top + 68, 9, 1, false);
+
+        top += cardH + 10;
+        // COG cards
+        card(c, side, top, side + bw, top + cardH, surface, line);
+        card(c, side + bw + gap, top, w - side, top + cardH, surface, line);
+        fill(c, accent);
+        text(c, "COG AKTUELL", side + bw/2, top + 24, 11, 1, true);
+        text(c, String.format(Locale.US, "%03.0f°", cog), side + bw/2, top + 54, 24, 1, true);
+        fill(c, muted); text(c, "Kurs über Grund", side + bw/2, top + 68, 9, 1, false);
+        fill(c, fg);
+        text(c, "COG Ø", side + bw + gap + bw/2, top + 24, 11, 1, true);
+        text(c, String.format(Locale.US, "%03.0f°", avgCog()), side + bw + gap + bw/2, top + 54, 24, 1, true);
+        fill(c, muted); text(c, "letzte 0,5 sm", side + bw + gap + bw/2, top + 68, 9, 1, false);
+
+        // Time / position block
+        top += cardH + 16;
+        fill(c, fg);
+        text(c, timeFmt.format(new Date()), center, top + 22, 22, 1, true);
+        fill(c, muted);
+        text(c, "FAHRTZEIT  " + trip(), center, top + 43, 12, 1, false);
+        if (showPos) text(c, pos(), center, top + 62, 10, 1, false);
+
+        // GPS strip
+        top += 75;
+        card(c, side, top, w - side, top + 48, surface, line);
+        fill(c, fg);
+        text(c, "GPS", side + 18, top + 20, 9, 0, true);
+        fill(c, accent);
+        text(c, String.valueOf(sats) + " SAT", side + 48, top + 20, 12, 0, true);
+        fill(c, muted);
+        text(c, last == null ? "Genauigkeit —" : String.format(Locale.US, "±%.0f m", last.getAccuracy()), center, top + 20, 11, 1, false);
+        fill(c, last != null && last.hasAccuracy() ? accent : muted);
+        text(c, last != null && last.hasAccuracy() ? "3D FIX" : "NO FIX", w - side - 18, top + 20, 11, 2, true);
+        fill(c, muted);
+        text(c, "GPS-Status", center, top + 36, 8, 1, false);
+
+        // Controls
+        top += 62;
+        float controlH = 46;
+        card(c, side, top, center - 5, top + controlH, surface, line);
+        card(c, center + 5, top, w - side, top + controlH, surface, line);
+        fill(c, fg);
+        text(c, night ? "☀  TAGMODUS" : "☾  NACHTMODUS", center/2 + 1, top + 29, 11, 1, true);
+        text(c, "HELLIGKEIT  " + Math.round(brightness * 100) + "%", center + (w-center)/2, top + 29, 11, 1, true);
+
+        // Reset is anchored to the bottom and gets a generous touch target.
+        float resetH = 58;
+        float rb = h - resetH - 14;
+        fill(c, accent); rounded(c, side, rb, w - side, rb + resetH, 18);
+        fill(c, Color.WHITE);
+        text(c, "RESET", center, rb + 25, 10, 1, true);
+        text(c, "DISTANZ & FAHRTZEIT", center, rb + 43, 14, 1, true);
+    }
+
+    @Override public boolean onTouchEvent(MotionEvent e) {
+        if (e.getAction() != MotionEvent.ACTION_UP) return true;
+        float den = getResources().getDisplayMetrics().density;
+        float x = e.getX() / den, y = e.getY() / den;
+        float w = getWidth() / den, h = getHeight() / den;
+        if (y > h - 85) {
+            distanceNm = 0; startMs = System.currentTimeMillis(); history.clear(); last = null; sog = 0; cog = 0; invalidate(); return true;
+        }
+        if (y > h - 160) {
+            if (x < w/2) { night = !night; invalidate(); }
+            else { brightness -= 0.15f; if (brightness < 0.25f) brightness = 1f; if (getContext() instanceof MainActivity) ((MainActivity)getContext()).setBrightness(brightness); invalidate(); }
+            return true;
+        }
+        return true;
+    }
 }
