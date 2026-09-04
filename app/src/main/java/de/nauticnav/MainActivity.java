@@ -19,18 +19,16 @@ public class MainActivity extends Activity implements LocationListener {
 
     private final GnssStatus.Callback gnss = new GnssStatus.Callback() {
         @Override public void onSatelliteStatusChanged(GnssStatus s) {
-            int n = 0;
-            for (int i = 0; i < s.getSatelliteCount(); i++) if (s.usedInFix(i)) n++;
-            if (navView != null) navView.setSatellites(n);
+            int used = 0;
+            for (int i = 0; i < s.getSatelliteCount(); i++) if (s.usedInFix(i)) used++;
+            if (navView != null) navView.setSatellites(used, s.getSatelliteCount());
         }
     };
 
     @Override public void onCreate(Bundle b) {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         super.onCreate(b);
-        getWindow().setStatusBarColor(Color.rgb(246, 249, 251));
-        getWindow().setNavigationBarColor(Color.BLACK);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        applyBars(false);
         navView = new NavView(this);
         setContentView(navView);
         lm = (LocationManager) getSystemService(LOCATION_SERVICE);
@@ -51,20 +49,31 @@ public class MainActivity extends Activity implements LocationListener {
         if (r == 7 && g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) startGps();
     }
 
-    @Override public void onLocationChanged(Location l) { navView.updateLocation(l); }
+    @Override public void onLocationChanged(Location l) { if (navView != null) navView.updateLocation(l); }
     @Override public void onProviderEnabled(String p) {}
     @Override public void onProviderDisabled(String p) {}
+
+    public void setNightMode(boolean night) {
+        applyBars(night);
+        if (navView != null) navView.invalidate();
+    }
+
+    private void applyBars(boolean night) {
+        getWindow().setStatusBarColor(night ? Color.rgb(5, 10, 16) : Color.rgb(246, 249, 251));
+        getWindow().setNavigationBarColor(Color.BLACK);
+        getWindow().getDecorView().setSystemUiVisibility(night ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+    }
+
+    public void setBrightness(float value) {
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = Math.max(0.10f, Math.min(1f, value));
+        getWindow().setAttributes(lp);
+    }
 
     @Override protected void onDestroy() {
         if (lm != null) {
             try { lm.removeUpdates(this); lm.unregisterGnssStatusCallback(gnss); } catch (Exception ignored) {}
         }
         super.onDestroy();
-    }
-
-    public void setBrightness(float value) {
-        WindowManager.LayoutParams lp = getWindow().getAttributes();
-        lp.screenBrightness = Math.max(0.08f, Math.min(1f, value));
-        getWindow().setAttributes(lp);
     }
 }
