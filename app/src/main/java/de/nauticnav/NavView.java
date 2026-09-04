@@ -1,6 +1,8 @@
 package de.nauticnav;
 
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.*;
 import android.location.Location;
 import android.view.MotionEvent;
@@ -19,10 +21,29 @@ public class NavView extends View {
     private final ArrayDeque<Point> history = new ArrayDeque<>();
     private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.GERMANY);
     private float den;
-    private float controlTopDp = 0, resetTopDp = 0;
+    private float controlTopDp = 0, resetTopDp = 0, tideTopDp = 0;
+    private String tideStation = "Automatisch / GPS";
+    private final SharedPreferences prefs;
 
     private static class Point { double sog, cog, seg; Point(double s,double c,double g){sog=s;cog=c;seg=g;} }
-    public NavView(Context c){ super(c); setFocusable(true); den=getResources().getDisplayMetrics().density; }
+    private static class TideStation { String name, slug; double lat, lon; TideStation(String n,String s,double a,double o){name=n;slug=s;lat=a;lon=o;} }
+
+    private final TideStation[] stations = new TideStation[]{
+        new TideStation("Schlüttsiel", "schluettsiel", 54.682, 8.755),
+        new TideStation("Büsum, Schleuse", "buesum_schleuse", 54.122, 8.859),
+        new TideStation("Cuxhaven, Steubenhöft", "cuxhaven_steubenhöft", 53.872, 8.710),
+        new TideStation("Neuwerk, Anleger", "neuwerk_anleger", 53.918, 8.486),
+        new TideStation("Wittdün, Amrum, Hafen", "wittduen_hafen", 54.632, 8.384),
+        new TideStation("List, Sylt, Hafen", "list_hafen", 55.017, 8.441),
+        new TideStation("Hörnum, Sylt, Hafen", "hoernum_hafen", 54.758, 8.296),
+        new TideStation("Vareler Schleuse", "vareler_schleuse", 53.410, 8.188)
+    };
+
+    public NavView(Context c){
+        super(c); setFocusable(true); den=getResources().getDisplayMetrics().density;
+        prefs=c.getSharedPreferences("nauticnav", Context.MODE_PRIVATE);
+        tideStation=prefs.getString("tide_station", "Automatisch / GPS");
+    }
 
     public void setSatellites(int used, int total){ satsUsed=used; satsTotal=total; invalidate(); }
 
@@ -77,10 +98,7 @@ public class NavView extends View {
         int accent=Color.rgb(25,126,218),green=Color.rgb(28,178,66),yellow=Color.rgb(235,175,20),line=night?Color.rgb(28,69,104):Color.rgb(205,216,223);
         fill(bg);c.drawRect(0,0,getWidth(),getHeight(),p);
 
-        // Header
         fill(accent);text(c,"⚓",side+18,29,18,Paint.Align.CENTER,false);fill(fg);text(c,"NAUTICNAV",center,27,13,Paint.Align.CENTER,true);fill(accent);text(c,"☰",w-side-12,30,20,Paint.Align.CENTER,false);
-
-        // Distance
         fill(accent);text(c,"GESAMTDISTANZ",center,53,9,Paint.Align.CENTER,true);fill(fg);text(c,String.format(Locale.US,"%.2f",distanceNm),center-8,88,39,Paint.Align.RIGHT,true);fill(muted);text(c,"sm",center+6,88,20,Paint.Align.LEFT,true);
 
         float top=101,cardH=67;
@@ -88,33 +106,51 @@ public class NavView extends View {
         fill(accent);text(c,"SOG AKTUELL",side+bw/2,top+19,10,Paint.Align.CENTER,true);fill(fg);text(c,String.format(Locale.US,"%.2f kn",sog),side+bw/2,top+45,21,Paint.Align.CENTER,true);fill(muted);text(c,String.format(Locale.US,"Ø %.2f kn",avgSog()),side+bw/2-22,top+60,8,Paint.Align.RIGHT,false);text(c,"· letzte 0,5 sm",side+bw/2-17,top+60,8,Paint.Align.LEFT,false);
         fill(accent);text(c,"COG AKTUELL",side+bw+gap+bw/2,top+19,10,Paint.Align.CENTER,true);fill(fg);text(c,String.format(Locale.US,"%03.0f° T",cog),side+bw+gap+bw/2,top+45,21,Paint.Align.CENTER,true);fill(muted);text(c,String.format(Locale.US,"Ø %03.0f°",avgCog()),side+bw+gap+bw/2-20,top+60,8,Paint.Align.RIGHT,false);text(c,"· letzte 0,5 sm",side+bw+gap+bw/2-15,top+60,8,Paint.Align.LEFT,false);
 
-        // Time / trip / position
         top+=cardH+9;card(c,side,top,w-side,top+62,surface,line);fill(fg);text(c,timeFmt.format(new Date()),center,top+23,19,Paint.Align.CENTER,true);fill(muted);text(c,"FAHRTZEIT",center-8,top+42,9,Paint.Align.RIGHT,true);text(c,trip(),center+4,top+42,9,Paint.Align.LEFT,false);text(c,pos(),center,top+56,8,Paint.Align.CENTER,false);
 
-        // GPS
         top+=70;card(c,side,top,w-side,top+44,surface,line);fill(accent);text(c,"GPS",side+10,top+18,9,Paint.Align.LEFT,true);fill(fg);text(c,satsUsed+" / "+satsTotal+" SAT",side+42,top+18,10,Paint.Align.LEFT,true);fill(muted);text(c,last==null?"±— m":String.format(Locale.US,"±%.1f m",last.getAccuracy()),center,top+18,9,Paint.Align.CENTER,false);fill(last!=null&&last.hasAccuracy()?green:muted);text(c,last!=null&&last.hasAccuracy()?"3D FIX":"NO FIX",w-side-10,top+18,9,Paint.Align.RIGHT,true);
 
-        // Moon / tide
-        top+=52;float infoH=73;card(c,side,top,center-4,top+infoH,surface,line);card(c,center+4,top,w-side,top+infoH,surface,line);
+        top+=52; tideTopDp=top;float infoH=73;card(c,side,top,center-4,top+infoH,surface,line);card(c,center+4,top,w-side,top+infoH,surface,line);
         fill(accent);text(c,"MOND",side+12,top+19,10,Paint.Align.LEFT,true);fill(fg);text(c,moonPhase(),side+12,top+39,9,Paint.Align.LEFT,false);fill(accent);text(c,"TIDENALTER",side+12,top+56,8,Paint.Align.LEFT,true);fill(yellow);text(c,tideAge(),side+12,top+68,9,Paint.Align.LEFT,true);
-        fill(accent);text(c,"GEZEITEN",center+10,top+19,10,Paint.Align.LEFT,true);fill(fg);text(c,"HW / NW",center+10,top+39,9,Paint.Align.LEFT,true);fill(muted);text(c,"Lokale Tidedaten erforderlich",center+10,top+57,7,Paint.Align.LEFT,false);text(c,"GPS allein liefert keine Zeiten/Höhen",center+10,top+68,6.5f,Paint.Align.LEFT,false);
+        fill(accent);text(c,"GEZEITEN",center+10,top+19,10,Paint.Align.LEFT,true);fill(fg);text(c,"HW / NW",center+10,top+39,9,Paint.Align.LEFT,true);fill(muted);text(c,tideStation,center+10,top+56,7.5f,Paint.Align.LEFT,false);fill(accent);text(c,"PEGEL AUSWÄHLEN",center+10,top+68,7,Paint.Align.LEFT,true);
 
-        // Sun line
         top+=infoH+8;card(c,side,top,w-side,top+39,surface,line);String[] sun=sunTimes();fill(yellow);text(c,"☀  SONNE",side+10,top+25,9,Paint.Align.LEFT,true);fill(fg);text(c,"AUFGANG  "+sun[0],center-4,top+25,8,Paint.Align.RIGHT,true);text(c,"UNTERGANG  "+sun[1],center+4,top+25,8,Paint.Align.LEFT,true);fill(muted);text(c,"TAG "+sun[2],w-side-10,top+25,8,Paint.Align.RIGHT,false);
 
-        // Controls, deliberately large touch targets
         top+=47;controlTopDp=top;float ctrlH=52;card(c,side,top,center-4,top+ctrlH,surface,line);card(c,center+4,top,w-side,top+ctrlH,surface,line);
         fill(fg);text(c,night?"☀  TAGMODUS":"☾  NACHTMODUS",(side+center-4)/2,top+22,10,Paint.Align.CENTER,true);fill(accent);text(c,"ANTIPPEN",(side+center-4)/2,top+39,7,Paint.Align.CENTER,false);
         fill(fg);text(c,"HELLIGKEIT  "+Math.round(brightness*100)+"%",center+(w-center)/2,top+20,10,Paint.Align.CENTER,true);
         float slL=center+18,slR=w-side-18,slY=top+38;stroke(night?Color.rgb(80,100,120):Color.rgb(190,205,214),3);c.drawLine(d(slL),d(slY),d(slR),d(slY),p);fill(accent);c.drawCircle(d(slL+(slR-slL)*brightness),d(slY),d(6),p);
 
-        // Reset at bottom
         resetTopDp=h-62;fill(accent);rr(c,side,resetTopDp,w-side,h-10,16);fill(Color.WHITE);text(c,"↻  RESET",center,resetTopDp+23,12,Paint.Align.CENTER,true);text(c,"Gesamtdistanz & Fahrzeit",center,resetTopDp+42,8,Paint.Align.CENTER,false);
     }
 
     private void reset(){distanceNm=0;startMs=0;history.clear();last=null;sog=0;cog=0;invalidate();}
     private void setNight(boolean value){night=value;if(getContext() instanceof MainActivity)((MainActivity)getContext()).setNightMode(night);invalidate();}
     private void setBrightnessFromX(float x){float left=(getWidth()/den)/2+18,right=getWidth()/den-30;brightness=Math.max(.10f,Math.min(1f,(x-left)/(right-left)));if(getContext() instanceof MainActivity)((MainActivity)getContext()).setBrightness(brightness);invalidate();}
+
+    private TideStation nearestStation(){
+        if(last==null)return null;
+        TideStation best=null;double bestD=Double.MAX_VALUE;
+        for(TideStation s:stations){float[] r=new float[1];Location.distanceBetween(last.getLatitude(),last.getLongitude(),s.lat,s.lon,r);if(r[0]<bestD){bestD=r[0];best=s;}}
+        return best;
+    }
+
+    private void showTideStationDialog(){
+        final String[] items=new String[stations.length+2];
+        TideStation near=nearestStation();
+        items[0]="Automatisch / GPS";
+        items[1]=near==null?"GPS-Vorschlag erst nach GPS-Fix verfügbar":"GPS-Vorschlag: "+near.name;
+        for(int i=0;i<stations.length;i++)items[i+2]=stations[i].name;
+        AlertDialog dialog=new AlertDialog.Builder(getContext()).setTitle("GEZEITENQUELLE / PEGEL").setItems(items,(d,which)->{
+            String selected;
+            if(which==0){selected="Automatisch / GPS";}
+            else if(which==1 && near!=null){selected=near.name;}
+            else if(which>=2){selected=stations[which-2].name;}
+            else return;
+            tideStation=selected;prefs.edit().putString("tide_station",selected).apply();invalidate();
+        }).setNegativeButton("ABBRECHEN",null).create();
+        dialog.show();
+    }
 
     @Override public boolean onTouchEvent(MotionEvent e){
         float x=e.getX()/den,y=e.getY()/den,w=getWidth()/den,h=getHeight()/den,center=w/2;
@@ -124,6 +160,7 @@ public class NavView extends View {
                 if(x<center){setNight(!night);} else setBrightnessFromX(x);
                 return true;
             }
+            if(y>=tideTopDp && y<=tideTopDp+73 && x>center){showTideStationDialog();return true;}
             return true;
         }
         if((e.getAction()==MotionEvent.ACTION_MOVE||e.getAction()==MotionEvent.ACTION_UP) && y>=controlTopDp && y<=controlTopDp+60 && x>=center){setBrightnessFromX(x);return true;}
