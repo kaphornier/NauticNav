@@ -3,3 +3,22 @@ plugins { id 'com.android.application' }
 android { namespace 'de.nauticnav'; compileSdk 35
     defaultConfig { applicationId 'de.nauticnav'; minSdk 26; targetSdk 35; versionCode 1; versionName '1.0' }
 }
+
+tasks.register('patchNavViewPosition') {
+    doLast {
+        def f = file('src/main/java/de/nauticnav/NavView.java')
+        def s = f.getText('UTF-8')
+        def old = 'private String pos(){return last==null?"Position wartet auf GPS":String.format(Locale.US,"%.5f° N   %.5f° E",last.getLatitude(),last.getLongitude());}'
+        def neu = '''private String pos(){
+        if(last==null)return "Position wartet auf GPS";
+        double lat=Math.abs(last.getLatitude()), lon=Math.abs(last.getLongitude());
+        int latDeg=(int)lat; double latMin=(lat-latDeg)*60.0;
+        int lonDeg=(int)lon; double lonMin=(lon-lonDeg)*60.0;
+        String ns=last.getLatitude()>=0?"N":"S", ew=last.getLongitude()>=0?"E":"W";
+        return String.format(Locale.GERMANY,"%02d° %06.3f′ %s   %03d° %06.3f′ %s",latDeg,latMin,ns,lonDeg,lonMin,ew);
+    }'''
+        if(s.contains(old)) f.write(s.replace(old,neu),'UTF-8')
+    }
+}
+
+tasks.named('preBuild').configure { dependsOn 'patchNavViewPosition' }
