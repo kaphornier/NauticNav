@@ -26,8 +26,8 @@ public class MainActivity extends Activity implements LocationListener {
     };
 
     @Override public void onCreate(Bundle b) {
-        super.onCreate(b);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+        super.onCreate(b);
         getWindow().setStatusBarColor(Color.rgb(246, 249, 251));
         getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
