@@ -59,6 +59,66 @@ public class NavView extends View {
         return String.format(Locale.US, "%02d:%02d:%02d", sec / 3600, (sec / 60) % 60, sec % 60);
     }
 
+    // Astronomical sunrise/sunset calculation (NOAA-style), using the GPS position and current date.
+    private String[] sunTimes() {
+        if (last == null) return new String[]{"—", "—", "—"};
+        Calendar cal = Calendar.getInstance();
+        int day = cal.get(Calendar.DAY_OF_YEAR);
+        double lat = last.getLatitude();
+        double lon = last.getLongitude();
+        double zenith = 90.8333;
+        double lngHour = lon / 15.0;
+        double n = day;
+        String rise = solarTime(n, lat, lngHour, zenith, true, cal.getTimeZone());
+        String set = solarTime(n, lat, lngHour, zenith, false, cal.getTimeZone());
+        String length = daylightLength(n, lat, zenith);
+        return new String[]{rise, set, length};
+    }
+
+    private String solarTime(double n, double lat, double lngHour, double zenith, boolean rising, TimeZone tz) {
+        double t = n + ((rising ? 6.0 : 18.0) - lngHour) / 24.0;
+        double M = (0.9856 * t) - 3.289;
+        double L = M + (1.916 * Math.sin(Math.toRadians(M))) + (0.020 * Math.sin(Math.toRadians(2 * M))) + 282.634;
+        L = (L + 360) % 360;
+        double RA = Math.toDegrees(Math.atan(0.91764 * Math.tan(Math.toRadians(L))));
+        RA = (RA + 360) % 360;
+        double Lquadrant = Math.floor(L / 90.0) * 90.0;
+        double RAquadrant = Math.floor(RA / 90.0) * 90.0;
+        RA = RA + (Lquadrant - RAquadrant);
+        RA /= 15.0;
+        double sinDec = 0.39782 * Math.sin(Math.toRadians(L));
+        double cosDec = Math.cos(Math.asin(sinDec));
+        double cosH = (Math.cos(Math.toRadians(zenith)) - sinDec * Math.sin(Math.toRadians(lat))) /
+                (cosDec * Math.cos(Math.toRadians(lat)));
+        if (cosH > 1 || cosH < -1) return "—";
+        double H = rising ? 360 - Math.toDegrees(Math.acos(cosH)) : Math.toDegrees(Math.acos(cosH));
+        H /= 15.0;
+        double T = H + RA - (0.06571 * t) - 6.622;
+        double utc = (T - lngHour) % 24.0;
+        if (utc < 0) utc += 24.0;
+        long now = System.currentTimeMillis();
+        Calendar out = Calendar.getInstance(tz);
+        out.setTimeInMillis(now);
+        int offsetMs = tz.getOffset(out.getTimeInMillis());
+        double local = utc + offsetMs / 3600000.0;
+        local = (local + 24.0) % 24.0;
+        int hour = (int)Math.floor(local);
+        int minute = (int)Math.round((local - hour) * 60.0);
+        if (minute >= 60) { minute = 0; hour = (hour + 1) % 24; }
+        return String.format(Locale.GERMANY, "%02d:%02d", hour, minute);
+    }
+
+    private String daylightLength(double n, double lat, double zenith) {
+        double decl = 23.45 * Math.sin(Math.toRadians(360.0 / 365.0 * (284.0 + n)));
+        double cosH = (Math.cos(Math.toRadians(zenith)) - Math.sin(Math.toRadians(lat)) * Math.sin(Math.toRadians(decl))) /
+                (Math.cos(Math.toRadians(lat)) * Math.cos(Math.toRadians(decl)));
+        if (cosH >= 1) return "00:00";
+        if (cosH <= -1) return "24:00";
+        double hours = 2.0 * Math.toDegrees(Math.acos(cosH)) / 15.0;
+        int totalMinutes = (int)Math.round(hours * 60.0);
+        return String.format(Locale.GERMANY, "%02d:%02d", totalMinutes / 60, totalMinutes % 60);
+    }
+
     private float d(float v) { return v * getResources().getDisplayMetrics().density; }
     private void fill(Canvas c, int color) { p.setStyle(Paint.Style.FILL); p.setColor(color); }
     private void stroke(Canvas c, int color, float widthDp) { p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(d(widthDp)); p.setColor(color); }
@@ -95,7 +155,6 @@ public class NavView extends View {
         float bw = (contentW - gap) / 2;
         float center = w / 2;
 
-        // Header
         text(c, "NAUTICNAV", center, 25, 11, 1, true);
         fill(c, accent);
         c.drawRoundRect(d(center - 18), d(31), d(center + 18), d(34), d(2), d(2), p);
@@ -105,7 +164,6 @@ public class NavView extends View {
 
         float top = 106;
         float cardH = 76;
-        // SOG cards
         card(c, side, top, side + bw, top + cardH, surface, line);
         card(c, side + bw + gap, top, w - side, top + cardH, surface, line);
         fill(c, accent);
@@ -118,7 +176,6 @@ public class NavView extends View {
         fill(c, muted); text(c, "letzte 0,5 sm", side + bw + gap + bw/2, top + 68, 9, 1, false);
 
         top += cardH + 10;
-        // COG cards
         card(c, side, top, side + bw, top + cardH, surface, line);
         card(c, side + bw + gap, top, w - side, top + cardH, surface, line);
         fill(c, accent);
@@ -130,7 +187,6 @@ public class NavView extends View {
         text(c, String.format(Locale.US, "%03.0f°", avgCog()), side + bw + gap + bw/2, top + 54, 24, 1, true);
         fill(c, muted); text(c, "letzte 0,5 sm", side + bw + gap + bw/2, top + 68, 9, 1, false);
 
-        // Time / position block
         top += cardH + 16;
         fill(c, fg);
         text(c, timeFmt.format(new Date()), center, top + 22, 22, 1, true);
@@ -138,7 +194,6 @@ public class NavView extends View {
         text(c, "FAHRTZEIT  " + trip(), center, top + 43, 12, 1, false);
         if (showPos) text(c, pos(), center, top + 62, 10, 1, false);
 
-        // GPS strip
         top += 75;
         card(c, side, top, w - side, top + 48, surface, line);
         fill(c, fg);
@@ -152,8 +207,18 @@ public class NavView extends View {
         fill(c, muted);
         text(c, "GPS-Status", center, top + 36, 8, 1, false);
 
-        // Controls
-        top += 62;
+        // Elegant compact solar information line: sunrise, sunset and daylight length.
+        top += 58;
+        String[] sun = sunTimes();
+        fill(c, muted);
+        text(c, "SONNE", side + 4, top + 18, 9, 0, true);
+        fill(c, fg);
+        text(c, "AUFGANG  " + sun[0], center - 70, top + 18, 10, 1, true);
+        text(c, "UNTERGANG  " + sun[1], center + 45, top + 18, 10, 1, true);
+        fill(c, muted);
+        text(c, "TAG  " + sun[2], w - side - 4, top + 18, 9, 2, false);
+
+        top += 38;
         float controlH = 46;
         card(c, side, top, center - 5, top + controlH, surface, line);
         card(c, center + 5, top, w - side, top + controlH, surface, line);
@@ -161,7 +226,6 @@ public class NavView extends View {
         text(c, night ? "☀  TAGMODUS" : "☾  NACHTMODUS", center/2 + 1, top + 29, 11, 1, true);
         text(c, "HELLIGKEIT  " + Math.round(brightness * 100) + "%", center + (w-center)/2, top + 29, 11, 1, true);
 
-        // Reset is anchored to the bottom and gets a generous touch target.
         float resetH = 58;
         float rb = h - resetH - 14;
         fill(c, accent); rounded(c, side, rb, w - side, rb + resetH, 18);
